@@ -1,7 +1,9 @@
+import * as fs from 'fs';
 import {
   CancellationError,
   commands,
   Disposable,
+  ExtensionMode,
   Uri,
   ViewColumn,
   Webview,
@@ -9,8 +11,9 @@ import {
   window,
 } from "vscode";
 import { ProgressData } from "../commons/progressData";
-import { IModelServer } from "../modelServer";
-import { OllamaServer } from "../ollama/ollamaServer";
+import { IModelServer } from '../modelServer';
+import { OllamaServer } from '../ollama/ollamaServer';
+import { Telemetry } from '../telemetry';
 import { getNonce } from "../utilities/getNonce";
 import { getUri } from "../utilities/getUri";
 
@@ -24,20 +27,29 @@ import { getUri } from "../utilities/getUri";
  * - Setting the HTML (and by proxy CSS/JavaScript) content of the webview panel
  * - Setting message listeners so data can be passed between the webview and extension
  */
+
+type GraniteConfiguration = {
+  tabModelId: string | null;
+  chatModelId: string | null;
+  embeddingsModelId: string | null;
+};
+
+
 export class SetupGranitePage {
   public static currentPanel: SetupGranitePage | undefined;
   private readonly _panel: WebviewPanel;
   private _disposables: Disposable[] = [];
-
+  private _fileWatcher: fs.FSWatcher | undefined;
+  private server: IModelServer;
   /**
    * The HelloWorldPanel class private constructor (called only from the render method).
    *
    * @param panel A reference to the webview panel
    * @param extensionUri The URI of the directory containing the extension
    */
-  private constructor(panel: WebviewPanel, extensionUri: Uri) {
+  private constructor(panel: WebviewPanel, extensionUri: Uri, extensionMode: ExtensionMode) {
     this._panel = panel;
-
+    this.server = new OllamaServer();
     // Set an event listener to listen for when the panel is disposed (i.e. when the user closes
     // the panel or when the panel is closed programmatically)
     this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
@@ -50,6 +62,44 @@ export class SetupGranitePage {
 
     // Set an event listener to listen for messages passed from the webview context
     this._setWebviewMessageListener(this._panel.webview);
+
+    if (extensionMode === ExtensionMode.Development) {
+      this._setupFileWatcher(extensionUri);
+    }
+  }
+
+  private _setupFileWatcher(extensionUri: Uri) {
+    const webviewsBuildPath = Uri.joinPath(extensionUri, "webviews", "build", "assets");
+    const webviewsBuildFsPath = webviewsBuildPath.fsPath;
+    console.log("Watching " + webviewsBuildFsPath);
+
+    let debounceTimer: NodeJS.Timeout | null = null;
+    const debounceDelay = 100; //100 ms
+
+    this._fileWatcher = fs.watch(webviewsBuildFsPath, (_event, filename) => {
+      if (filename) {
+        if (debounceTimer) {
+          clearTimeout(debounceTimer);
+        }
+
+        debounceTimer = setTimeout(() => {
+          console.log("File changed: " + filename + ", reloading webview");
+          this.debounceStatus = 0;
+          this._panel.webview.html = this._getWebviewContent(this._panel.webview, extensionUri);
+          debounceTimer = null;
+        }, debounceDelay);
+      }
+    });
+
+    // Add the file watcher to disposables
+    this._disposables.push(new Disposable(() => {
+      if (this._fileWatcher) {
+        this._fileWatcher.close();
+      }
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+    }));
   }
 
   /**
@@ -58,7 +108,7 @@ export class SetupGranitePage {
    *
    * @param extensionUri The URI of the directory containing the extension.
    */
-  public static render(extensionUri: Uri) {
+  public static render(extensionUri: Uri, extensionMode: ExtensionMode) {
     if (SetupGranitePage.currentPanel) {
       // If the webview panel already exists reveal it
       SetupGranitePage.currentPanel._panel.reveal(ViewColumn.One);
@@ -83,7 +133,7 @@ export class SetupGranitePage {
         }
       );
 
-      SetupGranitePage.currentPanel = new SetupGranitePage(panel, extensionUri);
+      SetupGranitePage.currentPanel = new SetupGranitePage(panel, extensionUri, extensionMode);
     }
   }
 
@@ -96,7 +146,7 @@ export class SetupGranitePage {
     // Dispose of the current webview panel
     this._panel.dispose();
 
-    // Dispose of all disposables (i.e. commands) for the current webview panel
+    // Dispose of all disposables (including the file watcher)
     while (this._disposables.length) {
       const disposable = this._disposables.pop();
       if (disposable) {
@@ -142,7 +192,7 @@ export class SetupGranitePage {
           <meta charset="UTF-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}'; connect-src http://localhost">
+          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src http://localhost">
           <link rel="stylesheet" type="text/css" href="${stylesUri}">
           <title>Granite Code</title>
         </head>
@@ -161,9 +211,9 @@ export class SetupGranitePage {
    * @param webview A reference to the extension webview
    * @param context A reference to the extension context
    */
+  private debounceStatus = 0;
+
   private _setWebviewMessageListener(webview: Webview) {
-    const server = new OllamaServer();
-    let debounceStatus = 0;
 
     webview.onDidReceiveMessage(
       async (message: any) => {
@@ -175,42 +225,42 @@ export class SetupGranitePage {
             webview.postMessage({
               command: "init",
               data: {
-                installModes: await server.supportedInstallModes(),
+                installModes: await this.server.supportedInstallModes(),
               },
             });
             break;
           case "installOllama":
-            await server.installServer(data.mode);
+            await this.server.installServer(data.mode);
             break;
           case "fetchStatus":
             const now = new Date().getTime();
             // Careful here, we're receiving 2 messages in Dev mode on useEffect, because <App> is wrapped with <React.StrictMode>
             // see https://stackoverflow.com/questions/60618844/react-hooks-useeffect-is-called-twice-even-if-an-empty-array-is-used-as-an-ar
 
-            if (debounceStatus > 0) {
-              const elapsed = now - debounceStatus;
+            if (this.debounceStatus > 0) {
+              const elapsed = now - this.debounceStatus;
               if (elapsed < 1000) {
                 console.log("Debouncing fetchStatus :" + elapsed);
                 break;
               }
             }
-            debounceStatus = now;
+            this.debounceStatus = now;
 
             // console.log("Received fetchStatus msg " + debounceStatus);
             let models: string[];
             try {
-              models = await server.listModels();
+              models = await this.server.listModels();
               ollamaInstalled = true;
             } catch (e) {
               //TODO check error response code instead?
               models = [];
               if (!ollamaInstalled) {
                 //fall back to checking CLI
-                ollamaInstalled = await server.isServerInstalled();
+                ollamaInstalled = await this.server.isServerInstalled();
                 if (ollamaInstalled) {
                   try {
-                    await server.startServer();
-                    models = await server.listModels();
+                    await this.server.startServer();
+                    models = await this.server.listModels();
                   } catch (e) {}
                 }
               }
@@ -241,7 +291,7 @@ export class SetupGranitePage {
               },
             });
             try {
-              await setupGranite(data as GraniteConfiguration, reportProgress);
+              await this.setupGranite(data as GraniteConfiguration, reportProgress);
             } finally {
               webview.postMessage({
                 command: "page-update",
@@ -258,49 +308,63 @@ export class SetupGranitePage {
     );
   }
 
-}
-
-type GraniteConfiguration = {
-  tabModelId: string;
-  chatModelId: string;
-  embeddingsModelId: string;
-};
-
-
-
-
-async function setupGranite(
-  graniteConfiguration: GraniteConfiguration, reportProgress: (progress: ProgressData) => void): Promise<void> {
+  async setupGranite(
+    graniteConfiguration: GraniteConfiguration, reportProgress: (progress: ProgressData) => void): Promise<void> {
   //TODO handle continue (conflicting) onboarding page
 
-  console.log("Starting Granite Code AI-Assistant...");
-  const modelServer: IModelServer = new OllamaServer();
+    console.log("Starting Granite Code AI-Assistant...");
 
-  //collect all unique models to install, from graniteConfiguration
-  const modelsToInstall = new Set([graniteConfiguration.chatModelId, graniteConfiguration.tabModelId, graniteConfiguration.embeddingsModelId]);
+    //collect all unique models to install, from graniteConfiguration
+    const modelsToInstall = new Set<string>();
+    if (graniteConfiguration.chatModelId !== null) {
+      modelsToInstall.add(graniteConfiguration.chatModelId);
+    }
+    if (graniteConfiguration.tabModelId !== null) {
+      modelsToInstall.add(graniteConfiguration.tabModelId);
+    }
+    if (graniteConfiguration.embeddingsModelId !== null) {
+      modelsToInstall.add(graniteConfiguration.embeddingsModelId);
+    }
 
-  try {
-    for (const model of modelsToInstall) {
-      if (await modelServer.isModelInstalled(model)) {
-        console.log(`${model} is already installed`);
-      } else {
-        await modelServer.installModel(model, reportProgress);
+    try {
+      for (const model of modelsToInstall) {
+        if (await this.server.isModelInstalled(model)) {
+          console.log(`${model} is already installed`);
+        } else {
+          await this.server.installModel(model, reportProgress);
+          await Telemetry.send("granite.setup.model.install", {
+            model,
+          });
+        }
       }
+
+      await this.server.configureAssistant(
+        graniteConfiguration.chatModelId,
+        graniteConfiguration.tabModelId,
+        graniteConfiguration.embeddingsModelId
+      );
+      console.log("Granite Code AI-Assistant setup complete, analytics will be sent now");
+      await Telemetry.send("granite.setup.success", {
+        chatModelId: graniteConfiguration.chatModelId ?? 'none',
+        tabModelId: graniteConfiguration.tabModelId ?? 'none',
+        embeddingsModelId: graniteConfiguration.embeddingsModelId ?? 'none',
+      });
+    } catch (error: any) {
+      //if error is CancellationError, then we can ignore it
+      if (error instanceof CancellationError || error?.name === "Canceled") {
+        return;
+      }
+      await Telemetry.send("granite.setup.error", {
+        error: error?.message ?? 'unknown error',
+        chatModelId: graniteConfiguration.chatModelId ?? 'none',
+        tabModelId: graniteConfiguration.tabModelId ?? 'none',
+        embeddingsModelId: graniteConfiguration.embeddingsModelId ?? 'none',
+      });
+      throw error;
     }
 
-    modelServer.configureAssistant(
-      graniteConfiguration.chatModelId,
-      graniteConfiguration.tabModelId,
-      graniteConfiguration.embeddingsModelId
-    );
-  } catch (error) {
-    //if error is CancellationError, then we can ignore it
-    if (error instanceof CancellationError) {
-      return;
-    }
-    throw error;
+    commands.executeCommand("continue.continueGUIView.focus");
   }
 
-  commands.executeCommand("continue.continueGUIView.focus");
-
 }
+
