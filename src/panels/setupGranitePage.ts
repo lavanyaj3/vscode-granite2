@@ -50,7 +50,7 @@ export class SetupGranitePage {
    * @param panel A reference to the webview panel
    * @param extensionUri The URI of the directory containing the extension
    */
-  private constructor(panel: WebviewPanel, extensionUri: Uri, extensionMode: ExtensionMode) {
+  private constructor(panel: WebviewPanel, extensionUri: Uri, extensionMode: isDevMode) {
     this._panel = panel;
     this.server = useMockServer ?
       new MockServer(300) :
