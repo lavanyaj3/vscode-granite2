@@ -12,7 +12,7 @@ export async function activate(context: ExtensionContext) {
   context.subscriptions.push(setupGraniteCmd);
   const hasRunBefore = context.globalState.get('hasRunSetup', false);
 
-  if (!hasRunBefore) {
+  if (!hasRunBefore || isDevMode) { 
     await context.globalState.update('hasRunSetup', true);
     return commands.executeCommand('vscode-granite.setup');
   }
