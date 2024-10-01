@@ -16,9 +16,6 @@ export async function activate(context: ExtensionContext) {
   // Check if the setup has already run using globalState
   const hasRunBefore = context.globalState.get('hasRunSetup', false);
 
-  // Check if we are in dev mode using the OLLAMA_MOCK environment variable
-  const isDevMode = process.env.OLLAMA_MOCK === 'true';
-
   // If the setup hasn't run before or if we are in dev mode, show the welcome page
   if (!hasRunBefore || isDevMode) {
     // Set the flag in global storage indicating that setup has been completed
