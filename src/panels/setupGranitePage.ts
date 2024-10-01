@@ -50,7 +50,7 @@ export class SetupGranitePage {
    * @param panel A reference to the webview panel
    * @param extensionUri The URI of the directory containing the extension
    */
-  private constructor(panel: WebviewPanel, extensionUri: Uri, extensionMode: ExtensionMode) {
+  private constructor(panel: WebviewPanel, extensionUri: Uri, isDevMode: ExtensionMode) {
     this._panel = panel;
     this.server = useMockServer ?
       new MockServer(300) :
@@ -68,7 +68,7 @@ export class SetupGranitePage {
     // Set an event listener to listen for messages passed from the webview context
     this._setWebviewMessageListener(this._panel.webview);
 
-    if (extensionMode === ExtensionMode.Development) {
+    if (isDevMode === ExtensionMode.Development) {
       this._setupFileWatcher(extensionUri);
     }
   }
@@ -113,7 +113,7 @@ export class SetupGranitePage {
    *
    * @param extensionUri The URI of the directory containing the extension.
    */
-  public static render(extensionUri: Uri, extensionMode: ExtensionMode) {
+  public static render(extensionUri: Uri, isDevMode: ExtensionMode) {
     if (SetupGranitePage.currentPanel) {
       // If the webview panel already exists reveal it
       SetupGranitePage.currentPanel._panel.reveal(ViewColumn.One);
@@ -138,7 +138,7 @@ export class SetupGranitePage {
         }
       );
 
-      SetupGranitePage.currentPanel = new SetupGranitePage(panel, extensionUri, extensionMode);
+      SetupGranitePage.currentPanel = new SetupGranitePage(panel, extensionUri, isDevMode);
     }
   }
 
