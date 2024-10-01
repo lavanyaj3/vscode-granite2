@@ -1,6 +1,7 @@
 import { commands, ExtensionContext } from "vscode";
 import { SetupGranitePage } from "./panels/setupGranitePage";
 import { Telemetry } from "./telemetry";
+import { isDevMode } from "./commons/constants";
 
 export async function activate(context: ExtensionContext) {
   await Telemetry.initialize(context);
@@ -10,7 +11,6 @@ export async function activate(context: ExtensionContext) {
   });
   context.subscriptions.push(setupGraniteCmd);
   const hasRunBefore = context.globalState.get('hasRunSetup', false);
-  const isDevMode = process.env.OLLAMA_MOCK === 'true';
   if (!hasRunBefore || isDevMode) {
     await context.globalState.update('hasRunSetup', true);
     return commands.executeCommand('vscode-granite.setup');
