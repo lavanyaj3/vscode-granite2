@@ -44,7 +44,9 @@ jobs:
           path: "./vscode-granite-*.vsix"
 
       - name: Run Test
-        uses: nikolassp/xvfb-action@v1.1.0
+        uses: docker://jlesage/xvfb:latest
+        with:
+          args: npm test
 
       - name: Update latest release
         if: runner.os == 'Linux' && github.ref == 'refs/heads/main'
