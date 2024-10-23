@@ -43,11 +43,22 @@ jobs:
           name: vscode-granite-vsix-${{ runner.os }}-${{ github.run_id }}
           path: "./vscode-granite-*.vsix"
 
-      - name: Run Test
+      - name: Run Test on Ubuntu
+        if: runner.os == 'Linux'
         run: |
+          # Install Xvfb
+          sudo apt-get update
           sudo apt-get install -y xvfb
-          nohup Xvfb :99 -screen 0 1920x1080x24 &
+          # Start Xvfb
+          Xvfb :99 -screen 0 1920x1080x24 &
           export DISPLAY=:99
+          # Run your tests
+          npm test
+
+      - name: Run Test on macOS
+        if: runner.os == 'macOS'
+        run: |
+          # Run your tests directly (as Xvfb is not typically used on macOS)
           npm test
 
       - name: Update latest release
