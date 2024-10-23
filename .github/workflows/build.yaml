@@ -44,7 +44,7 @@ jobs:
           path: "./vscode-granite-*.vsix"
 
       - name: Run Test
-        uses: ffflorian/xvfb-action@v1.0.0 # Use an alternative action for Xvfb
+        uses: michaeljones/xvfb-action@v1.1.0 # Updated action
 
       - name: Update latest release
         if: runner.os == 'Linux' && github.ref == 'refs/heads/main'
