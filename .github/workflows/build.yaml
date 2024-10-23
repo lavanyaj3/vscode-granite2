@@ -44,7 +44,7 @@ jobs:
           path: "./vscode-granite-*.vsix"
 
       - name: Run Test
-        uses: mcr.microsoft.com/vscode/devcontainers/xvfb-action@v1.0.0
+        uses: xvfb-action/xvfb-action@v1.0.0
 
       - name: Update latest release
         if: runner.os == 'Linux' && github.ref == 'refs/heads/main'
