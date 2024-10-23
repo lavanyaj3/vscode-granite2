@@ -44,7 +44,11 @@ jobs:
           path: "./vscode-granite-*.vsix"
 
       - name: Run Test
-        uses: xvfb-action/xvfb-action@v1.0.0
+        run: |
+          sudo apt-get install -y xvfb
+          nohup Xvfb :99 -screen 0 1920x1080x24 &
+          export DISPLAY=:99
+          npm test
 
       - name: Update latest release
         if: runner.os == 'Linux' && github.ref == 'refs/heads/main'
