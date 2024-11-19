@@ -36,13 +36,9 @@ export interface AiAssistantConfigurationRequest {
   embeddingsModel: string | null;
 }
 
-const DEFAULT_CONTEXT_LENGTH = 4096;
+const DEFAULT_CONTEXT_LENGTH = 8192;
 const DEFAULT_API_BASE = "http://localhost:11434";
 const DEFAULT_PROVIDER = "ollama";
-
-//See https://github.com/continuedev/continue/blob/51f4d1b48b7e9fb007b08d344d1afdb725b1a970/core/util/paths.ts#L14-L15
-const CONTINUE_GLOBAL_DIR = process.env.CONTINUE_GLOBAL_DIR ?? path.join(os.homedir(), ".continue");
-const CONTINUE_CONFIG_FILE = path.join(CONTINUE_GLOBAL_DIR, "config.json")
 
 const baseConfig: Partial<ModelConfig> = {
   provider: DEFAULT_PROVIDER,
@@ -52,21 +48,21 @@ const baseGraniteConfig: Partial<ModelConfig> = {
   ...baseConfig,
   contextLength: DEFAULT_CONTEXT_LENGTH,
   completionOptions: {
-    maxTokens: DEFAULT_CONTEXT_LENGTH / 2,
-    temperature: 0,
+    maxTokens: 4000,
+    temperature: 0.1,
     topP: 0.9,
     topK: 40,
     presencePenalty: 0.0,
     frequencyPenalty: 0.1
   },
-  systemMessage: "You are Granite, an AI language model developed by IBM. You are a cautious assistant. You carefully follow instructions. You are helpful and harmless and you follow ethical guidelines and promote positive behavior.",
+  systemMessage: "You are Granite Code, an AI language model developed by IBM. You are a cautious assistant. You carefully follow instructions. You are helpful and harmless and you follow ethical guidelines and promote positive behavior. You always respond to greetings (for example, hi, hello, g'day, morning, afternoon, evening, night, what's up, nice to meet you, sup, etc) with \"Hello! I am Granite Code, created by IBM. How can I help you today?\". Please do not say anything else and do not start a conversation.",
 };
 
 const modelConfigs: ModelConfig[] = [
   {
     model: "granite-code:3b",
     ...baseGraniteConfig,
-    contextLength: 24000,
+    contextLength: 128000,
   },
   {
     model: "granite-code:8b",
@@ -74,11 +70,11 @@ const modelConfigs: ModelConfig[] = [
     contextLength: 128000,
   },
   {
-    model: "granite3-dense:2b",
+    model: "granite-code:20b",
     ...baseGraniteConfig,
   },
   {
-    model: "granite3-dense:8b",
+    model: "granite-code:34b",
     ...baseGraniteConfig,
   },
   {
@@ -128,9 +124,10 @@ export class AiAssistantConfigurator {
   }
 
   async configureAssistant() {
-    const config = await readConfig(CONTINUE_CONFIG_FILE);
+    const configFile = path.join(os.homedir(), ".continue/config.json");
+    const config = await readConfig(configFile);
     if (!config) {
-      return vscode.window.showErrorMessage(`No ${CONTINUE_CONFIG_FILE} found`);
+      return vscode.window.showErrorMessage("No ~/.continue/config.json found");
     }
     // Check if we should show the Continue Onboarding message
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -177,7 +174,7 @@ export class AiAssistantConfigurator {
     }
 
     if (updateConfig) {
-      await writeConfig(CONTINUE_CONFIG_FILE, config);
+      await writeConfig(configFile, config);
       const currentChatModel = this.request.chatModel ?? null;
       let message = "Continue configuration completed.";
       if (currentChatModel) {
@@ -204,6 +201,8 @@ function isContinueInstalled(): boolean {
   const continueExt = vscode.extensions.getExtension(CONTINUE_EXTENSION_ID);
   return continueExt !== undefined;
 }
+
+export const configFilePath = path.join(os.homedir(), ".continue/config.json");
 
 export async function readConfig(configFile: string): Promise<any> {
   try {

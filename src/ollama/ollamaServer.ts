@@ -152,7 +152,7 @@ export class OllamaServer implements IModelServer {
       await terminalCommandRunner.runInTerminal(
         installCommand,
         {
-          name: "Granite Models Setup",
+          name: "Granite Code Setup",
           show: true,
         }
       );
